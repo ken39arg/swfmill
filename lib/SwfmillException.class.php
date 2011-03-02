@@ -9,7 +9,7 @@
  * @since  2009/08/20
  * @version $Id: SwfmillException.class.php 1241 2010-01-25 09:43:55Z araga-kensaku $
  */
-class SwfmillException extends sfException
+class SwfmillException extends Exception
 {
   const DEFAULT_ERROR = 100;
   const NOT_FOUND     = 140;

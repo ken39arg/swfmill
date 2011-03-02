@@ -12,35 +12,10 @@ class FlashLiteToolkit
   const JPEG_PREFIX = "\xFF\xD9\xFF\xD8";
 
   private static
-    $cacheInstance   = null,
-    $swfmill_cmd     = null;
+    $configs         = array(
+      'swfmill_command' => 'swfmill',
+    );
   
-  // static functions
-  public static function swfmill()
-  {
-    if (self::$swfmill_cmd == null) 
-    {
-      $config_bin = sfConfig::get('app_flash_generator_swfmill_bin');
-      if ($config_bin) 
-      {
-        if (substr($config_bin, 0, 1) == '/') 
-        {
-          self::$swfmill_cmd = $config_bin;
-        } 
-        else 
-        {
-          self::$swfmill_cmd = SF_ROOT_DIR.DIRECTORY_SEPARATOR.$config_bin;
-        }
-      } 
-      else 
-      {
-        self::$swfmill_cmd = 'swfmill';
-      }
-    }
-    return self::$swfmill_cmd;  
-  }
-
-
   /**
   * XML文字列(ファイルじゃない)をSWFバイナリに変換ファイルを生成する訳ではありません。
   *
@@ -57,7 +32,7 @@ class FlashLiteToolkit
       1 => array("pipe", "w"),
       2 => array("pipe", "w"),
     );
-    $process = proc_open(self::swfmill()." ".$opt." xml2swf stdin", $descriptorspec,$pipes);
+    $process = proc_open(self::$configs['swfmill_command']." ".$opt." xml2swf stdin", $descriptorspec,$pipes);
     if (is_resource($process))
     {
       fwrite($pipes[0], $xmlstr);
@@ -98,7 +73,7 @@ class FlashLiteToolkit
       1 => array("pipe", "w"),
       2 => array("pipe", "w"),
     );
-    $command = self::swfmill()." ".$opt." swf2xml stdin";
+    $command = self::$configs['swfmill_command']." ".$opt." swf2xml stdin";
     $process = proc_open($command, $descriptorspec, $pipes);
     if (is_resource($process)) 
     {
@@ -124,122 +99,8 @@ class FlashLiteToolkit
     throw new SwfmillException("Unknown Error at Swfmill::swf2xml", SwfmillException::COMMAND_ERROR);
   }
 
-  /**
-   * flashのpathパスからtemplateXML文字列を取得する. 
-   *
-   * @params String $swfFile     swfコンテンツのパス
-   * @params Array  $dummyImages 埋め込んでいる代替画像のパスarrayのキーで置換出来ます
-   * @return String テンプレートXML
-   */
-  public static function generateTemplate($swfFile, $dummyImages = array())
+  public static function setConfig($configs)
   {
-    $template = self::getCacheInstance()->get($swfFile);
-    if (!$template)
-    {
-      $template = self::generatePersistentTemplate($swfFile, $dummyImages);
-      self::getCacheInstance()->set($swfFile, $template);
-    }
-    return $template;
+    self::$configs = array_merge($configs, self::$configs);
   }
-
-  private static function generatePersistentTemplate($swfFile, $dummyImages = array())
-  {
-    $cacheDir = sfConfig::get('app_flash_generator_cache_dir');
-    $currentMask = umask(0000);
-
-    if (!file_exists($swfFile))
-    {
-      throw new SwfmillException("{FlashLiteToolkit}No swf file ".$swfFile);
-    }
-
-    $cacheDir = $cacheDir.DIRECTORY_SEPARATOR.ltrim(str_replace(sfConfig::get('sf_root_dir'), '', dirname($swfFile)));
-    if (!file_exists($cacheDir))
-    {
-      mkdir($cacheDir, 0777, true);
-    }
-    if (!is_readable($cacheDir))
-    {
-      throw new SwfmillException("{FlashLiteToolkit} no permission ".$cacheDir);
-    }
-
-    $cacheFile = $cacheDir.DIRECTORY_SEPARATOR.basename($swfFile).'.xml';
-
-    if (!file_exists($cacheFile) || filemtime($cacheFile) < filemtime($swfFile)) 
-    {
-      $swfString = file_get_contents($swfFile);
-      try 
-      {
-        $template = FlashLiteToolkit::swf2xml($swfString, ' -e cp932'); 
-      }
-      catch (SwfmillException $e)
-      {
-        $template = FlashLiteToolkit::swf2xml($swfString); 
-      }
-
-      if (!is_array($dummyImages) && $dummyImages != '')
-      {
-        $dummyImages = array(0 => $dummyImages);
-      }
-      if (0 < count($dummyImages))
-      {
-        foreach ($dummyImages as $name => $dummyImage)
-        {
-          $imageBinary = file_get_contents($dummyImage);
-          $imageDummy  = base64_encode(self::JPEG_PREFIX.$imageBinary);
-          $template    = str_replace($imageDummy, '[%image_'.$name.'%]', $template, $count);  
-          if ($count == 0)
-          {
-            $template   = str_replace(base64_encode($imageBinary), '[%image_'.$name.'%]', $template, $count);  
-          }
-          $imageBinary = $imageDummy = null;
-          $count = 0;
-        }
-      }
-
-      file_put_contents($cacheFile, $template);
-      chmod($cacheFile, 0666);
-    }
-    else
-    {
-      $template = file_get_contents($cacheFile);
-    }
-
-    umask($currentMask);
-    return $template;
-  }
-
-  public static function changeImage($template, $imageFile, $name = 0)
-  {
-    $imageBinary = file_get_contents($imageFile);
-    $imageString = base64_encode(self::JPEG_PREFIX.$imageBinary);
-    $template    = str_replace('[%iamge_'.$name.'%]', $imageString, $template);
-    return $template;
-  }
-
-  public static function getCacheInstance()
-  {
-    if (self::$cacheInstance === null)
-    {
-      $class = sfConfig::get('app_flash_generator_cache_class', 'sfNoCache');
-      $param = sfConfig::get('app_flash_generator_cache_param');
-
-      if (!class_exists($class))
-      {
-        throw new sfException("{FlashLiteToolkit} Unable to load cache class: $class");
-      }
-      
-      $instance = new $class($param);
-
-      if ($instance instanceof sfCache)
-      {
-        self::$cacheInstance = $instance;
-      }
-      else
-      {
-        throw new sfException('{FlashLiteToolkit} Please setting sfCache');
-      }
-    }
-
-    return self::$cacheInstance;
-  }  
 }
