@@ -1,0 +1,15 @@
+## 概要
+
+FlashLite1.1のswfを動的に作り出すためのPHPライブラリです。
+swfmill 0.2.12で動作確認済み
+
+## 依存
+
+- swfmill 0.2.12 
+  http://swfmill.org/releases/
+
+## サンプル
+
+- sample/300.php
+
+$ php sample/300.php > 300.swf
